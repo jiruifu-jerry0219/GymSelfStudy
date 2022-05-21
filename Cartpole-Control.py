@@ -1,6 +1,7 @@
 import numpy as np
 from gym import Env
 from gym.spaces import Box, Discrete
+from gym.utils import seeding
 import random
 from scipy.integrate import odeint
 import matplotlib.pyplot as plt
@@ -14,7 +15,7 @@ class Cartpole(Env):
                  mpole,
                  L=1,
                  b=1,
-                 max_force=1):
+                 max_force=10):
         """
         :param seed: Random seed
         :param mcart: mass of cart
@@ -29,7 +30,7 @@ class Cartpole(Env):
             c) x: translational displacement of the cart which range between (-100, 100) m
             d) dx/dt: translational velocity of the cart which range between (-5, 5) m/s
         2. Action space:
-            a) F: horizontal force applied to the cart which range between (-max_force, max_force) [defined by user]
+            a) F: horizontal force applied to the cart which range between (-max_force, max_force) [N]
         """
         self.seed = seed
         self.m_pole = mpole
@@ -53,6 +54,9 @@ class Cartpole(Env):
         self.max_time = None
         self.steps_beyond_done = None
 
+    def seed(self, seed = None): #Inherient the "seeding" method of Gym to create the random seed
+        self.np_random, seed = seeding.np_random(seed)
+        return [seed]
     def reset(self):
         super().reset(seed=self.seed)
         self.state = self.np_random.uniform(low=-0.2, high=0.2, size=(4,))
@@ -62,7 +66,7 @@ class Cartpole(Env):
         return np.array(self.state, dtype=np.float32)
 
     def step(self, action):
-        theta, thetaot, x, xdot = self.state
+        theta, thetadot, x, xdot = self.state
         force = np.clip(action, -self.max_force, self.max_force)[0]
         self.last_Force = force
         costheta = math.cos(theta)
@@ -70,9 +74,32 @@ class Cartpole(Env):
         temp = (
             force + self.rho * thetaot ** 2 * sintheta
         ) / (self.m_pole + self.m_cart)
-        thetaacc = (self.g * sintheta)
+        thetaacc = (self.g * sintheta * sintheta - costheta * temp) / (
+            self.L * (4.0 / 3.0 - self.masspole * costheta ** 2 / (self.m_pole + self.m_cart))
+        )
+        xacc = temp - self.rho * thetaacc * costheta / (self.m_pole + self.m_cart)
 
+        if self.kinematics_integrator == "euler":
+            x = x + self.tau * x_dot
+            x_dot = x_dot + self.tau * xacc
+            theta = theta + self.tau * thetadot
+            thetadot = theta_dot + self.tau * thetaacc
 
+        else:
+            x_dot = x_dot + self.tau * xacc
+            x = x + self.tau * thetadot
+            thetadot = thetadot + self.tau * thetaacc
+            theta = theta + self.tau * thetadot
+
+        done = bool(
+            x < -self.x_max
+            or x > self.x_max
+            or theta < -self.max_theta
+            or theta < self.max_theta
+        )
+
+        if not done:
+            reward = 1.0
 
 
 
